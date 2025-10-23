@@ -6,13 +6,13 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-from langchain_community.llms import HuggingFaceHub
+from langchain_groq import ChatGroq
 from dotenv import load_dotenv
 
 # --------- Step 0: Load environment variables ---------
 load_dotenv()
-if not os.getenv("HUGGINGFACEHUB_API_TOKEN"):
-    raise EnvironmentError("❌ HUGGINGFACEHUB_API_TOKEN not found in .env file!")
+if not os.getenv("GROQ_API_KEY"):
+    raise EnvironmentError("❌ GROQ_API_KEY not found in .env file!")
 
 # --------- Step 1: Schema ---------
 class GFGProfile(BaseModel):
@@ -28,13 +28,14 @@ class GFGProfile(BaseModel):
     top_skills: list[str] = []
     raw_extracted: dict = Field(default_factory=dict)
 
+
 # --------- Step 2: Scraping ---------
 def fetch_gfg_profile(username: str) -> str | None:
     urls = [
         f"https://auth.geeksforgeeks.org/user/{username}",
         f"https://www.geeksforgeeks.org/user/{username}/",
     ]
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; gfg-falcon/1.0)"}
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; gfg-groq/1.0)"}
 
     for url in urls:
         res = requests.get(url, headers=headers, timeout=10)
@@ -80,7 +81,7 @@ def parse_profile_html(html: str) -> dict:
     return data
 
 
-# --------- Step 3: Falcon LLM ---------
+# --------- Step 3: Groq LLM ---------
 prompt = PromptTemplate(
     template="""
 You are given a dictionary of raw extracted information from a GeeksforGeeks user page.
@@ -111,17 +112,13 @@ Raw extracted info:
     input_variables=["username", "raw_extracted"],
 )
 
-# 🦅 Using Falcon via HuggingFaceHub
-llm = HuggingFaceHub(
-    repo_id="tiiuae/falcon-7b-instruct",  # You can also use "tiiuae/falcon-40b-instruct"
-    model_kwargs={"temperature": 0.2, "max_new_tokens": 1024}
-)
-
+llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
 chain = LLMChain(llm=llm, prompt=prompt)
 
 
 # --------- Step 4: Pipeline ---------
 def gfg_to_json(username: str, output_path: str = "output.json") -> dict:
+    # --- Delete existing file if it exists ---
     if os.path.exists(output_path):
         os.remove(output_path)
         print(f"🗑️ Deleted old file: {output_path}")
@@ -142,11 +139,12 @@ def gfg_to_json(username: str, output_path: str = "output.json") -> dict:
         if match:
             parsed = json.loads(match.group(0))
         else:
-            raise ValueError("Invalid JSON from Falcon:\n" + response)
+            raise ValueError("Invalid JSON from LLM:\n" + response)
 
     profile = GFGProfile(**parsed)
     result = profile.dict()
 
+    # --- Save to JSON file ---
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
     print(f"✅ Saved new file: {output_path}")
@@ -157,9 +155,11 @@ def gfg_to_json(username: str, output_path: str = "output.json") -> dict:
 # --------- Step 5: CLI ---------
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Fetch GFG profile and format via Falcon LLM")
+    parser = argparse.ArgumentParser(description="Fetch GFG profile and format via Groq LLM")
     parser.add_argument("username", help="GFG username")
     args = parser.parse_args()
 
     result = gfg_to_json(args.username)
     print(json.dumps(result, indent=2, ensure_ascii=False))
+
+isko falcon se kar groq ki jagah same as it iis
